@@ -17,6 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 # stanza deferred off the single-word path (hosting-plan cost lever); install with `uv sync --extra full`
 full = ["stanza>=1.8"]
+
+[dependency-groups]
+# dev tooling — installed by default on `uv sync`; run tests with `uv run pytest -q`
 dev = ["pytest>=8"]
 
 [project.scripts]
