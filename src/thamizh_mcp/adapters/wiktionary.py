@@ -23,7 +23,7 @@ _API = "https://ta.wiktionary.org/w/api.php"
 # Must be descriptive + carry contact info. Env-overridable for deployments.
 _UA = os.environ.get(
     "THAMIZH_HTTP_UA",
-    "ThamizhMCP/0.1 (Tamil word-grammar MCP server; contact: asaravanan75@gmail.com) httpx",
+    "ThamizhMCP/0.1 (Tamil word-grammar MCP server; contact: saravanan3@duck.com) httpx",
 )
 _HEADERS = {"User-Agent": _UA, "Accept": "application/json"}
 _MARKUP = re.compile(r"\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|'''?|\{\{[^}]*\}\}")

@@ -1,15 +1,15 @@
 cff-version: 1.2.0
-message: "If you use THAMIZH MCP, please cite it as below."
-title: "THAMIZH MCP -- a grounded Tamil word-grammar analysis server"
+message: "If you use Thamizh MCP, please cite it as below."
+title: "Thamizh MCP -- a grounded Tamil word-grammar analysis server"
 abstract: >-
   A Model Context Protocol server for Tamil word-grammar (chol ilakkanam)
   analysis that grounds answers in authentic Tamil sources (Tholkappiyam-first)
   and self-enriches from evolving Tamil data.
 type: software
 authors:
-  - given-names: Saravanan
-    family-names: A
-    email: asaravanan75@gmail.com
+  - given-names: Saran
+    family-names: Saravanan
+    email: saravanan3@duck.com
     affiliation: International Educational Foundation Inc.
 repository-code: "https://github.com/ief-admin/thamizh-mcp"
 url: "https://ief-global.org"

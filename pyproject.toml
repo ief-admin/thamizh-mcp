@@ -1,11 +1,11 @@
 [project]
 name = "thamizh-mcp"
 version = "0.1.0"
-description = "THAMIZH MCP — source-grounded Tamil word-grammar (சொல் இலக்கணம்) analysis MCP server"
+description = "Thamizh MCP — source-grounded Tamil word-grammar (சொல் இலக்கணம்) analysis MCP server"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Saran", email = "asaravanan75@gmail.com" }]
+authors = [{ name = "Saran Saravanan", email = "saravanan3@duck.com" }]
 dependencies = [
   "mcp[cli]>=1.2.0",
   "pydantic>=2.7",
