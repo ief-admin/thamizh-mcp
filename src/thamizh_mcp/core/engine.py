@@ -14,8 +14,8 @@ from thamizh_mcp import config
 from thamizh_mcp.adapters.base import AdapterResult, SourceAdapter
 from thamizh_mcp.core import decoder
 from thamizh_mcp.schema import (
-    STUB_NOTE, Gap, Grammar, Meaning, NativeEquivalent, Origin, Sense, SourceRef, WordAnalysis,
-    empty_analysis,
+    STUB_NOTE, EquivalentCandidate, Gap, Grammar, Meaning, NativeEquivalent, Origin, Sense,
+    SourceRef, WordAnalysis, empty_analysis,
 )
 from thamizh_mcp.store.knowledge import Claim, KnowledgeStore
 
@@ -27,10 +27,12 @@ class Engine:
         self,
         morph: Optional[SourceAdapter] = None,
         meaning_sources: Sequence[SourceAdapter] = (),
+        equivalent_sources: Sequence[SourceAdapter] = (),
         store: Optional[KnowledgeStore] = None,
     ):
         self.morph = morph
         self.meaning_sources = list(meaning_sources)
+        self.equivalent_sources = list(equivalent_sources)
         self.store = store
 
     async def analyze(
@@ -45,13 +47,11 @@ class Engine:
             await self._fill_morphology(a, normalized, wants)
         if "meaning" in wants:
             await self._fill_meaning(a, normalized, allow_enrichment)
-        # Not yet wired (Phase 1/2): explicit gaps, never guesses.
+        if "native_equivalent" in wants:
+            await self._fill_native_equivalent(a, normalized, allow_enrichment)
+        # Not yet wired (Phase 2): explicit gaps, never guesses.
         if "origin" in wants:
             a.gaps.append(Gap(field="origin", note=_PENDING))
-        if "native_equivalent" in wants:
-            a.native_equivalent = NativeEquivalent(
-                applicable=False, note="origin unresolved — equivalent check deferred")
-            a.gaps.append(Gap(field="native_equivalent", note=_PENDING))
         if "formation" in wants and not a.formation.components:
             a.gaps.append(Gap(field="formation", note="பகுபத உறுப்பு decoder lands in Phase 3"))
         return a
@@ -142,6 +142,41 @@ class Engine:
             note += "; no evolving source configured"
         a.gaps.append(Gap(field="meaning", note=note))
 
+    async def _fill_native_equivalent(
+        self, a: WordAnalysis, normalized: str, allow_enrichment: bool
+    ) -> None:
+        """Surface ATTESTED pure-Tamil equivalents for a borrowed word.
+
+        Until the origin classifier lands (Phase 2), a hit in an Indic→Tamil equivalent list is
+        itself the evidence that the word is borrowed → applicable=True. A miss cannot prove the
+        word is native (it may simply be absent from our lists), so applicable stays False with a
+        note that origin classification is pending. The classifier will later gate this precisely.
+        Network equivalent sources (evolving-tier, future ta.wiktionary synonym mining) must honor
+        allow_enrichment; the local I2PT CSVs do not touch the network, so they always run.
+        """
+        misses: list[str] = []
+        for src in self.equivalent_sources:
+            res = await src.lookup(normalized)
+            if isinstance(res, AdapterResult):
+                candidates = [EquivalentCandidate(**c) for c in res.fields["candidates"]]
+                if candidates:
+                    a.native_equivalent = NativeEquivalent(
+                        applicable=True, candidates=candidates, sources=res.sources,
+                        note="attested in an Indic→Tamil equivalent source; origin classification "
+                             "(Phase 2) will confirm the borrowed status")
+                    a.sources.extend(res.sources)
+                    return
+            else:
+                misses.append(f"{res.source}: {res.reason} — {res.note}")
+        note = "no attested native equivalent found"
+        if misses:
+            note += " (" + " | ".join(misses) + ")"
+        elif not self.equivalent_sources:
+            note += "; no equivalent source configured"
+        note += "; origin classification pending (Phase 2)"
+        a.native_equivalent = NativeEquivalent(applicable=False, note=note)
+        a.gaps.append(Gap(field="native_equivalent", note=note))
+
 
 _default: Optional[Engine] = None
 
@@ -150,11 +185,13 @@ def default_engine() -> Engine:
     """Auto-wire from environment: FST anchor if available; Wiktionary + store for meaning."""
     global _default
     if _default is None:
+        from thamizh_mcp.adapters.equivalents import IndicToPureTamilAdapter
         from thamizh_mcp.adapters.thamizhimorph import ThamizhiMorphAdapter
         from thamizh_mcp.adapters.wiktionary import TamilWiktionaryAdapter
         _default = Engine(
             morph=ThamizhiMorphAdapter() if config.flookup_available() else None,
             meaning_sources=[TamilWiktionaryAdapter()],
+            equivalent_sources=[IndicToPureTamilAdapter()],
             store=KnowledgeStore(config.DEFAULT_DB),
         )
     return _default
@@ -166,4 +203,14 @@ async def analyze_word(
 ) -> WordAnalysis:
     """Module-level entry point used by the MCP head (server.py)."""
     return await default_engine().analyze(word, normalized, include=include,
+                                          allow_enrichment=allow_enrichment)
+
+
+async def suggest_native_equivalent(
+    word: str, normalized: str, allow_enrichment: bool = True,
+) -> WordAnalysis:
+    """Focused entry point for the suggest_native_equivalent MCP tool: only the equivalent
+    section is computed (the full analysis is skipped). Returns the WordAnalysis so the head
+    can serialize native_equivalent plus its honest gap when nothing is attested."""
+    return await default_engine().analyze(word, normalized, include=["native_equivalent"],
                                           allow_enrichment=allow_enrichment)

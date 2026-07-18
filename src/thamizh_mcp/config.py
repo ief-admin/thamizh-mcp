@@ -22,6 +22,14 @@ PRIMARY_FSTS = ("noun.fst", "pronoun.fst", "adj.fst", "adv.fst", "part.fst",
 FLOOKUP_TIMEOUT_S = float(os.environ.get("THAMIZH_FLOOKUP_TIMEOUT", "10"))
 HTTP_TIMEOUT_S = float(os.environ.get("THAMIZH_HTTP_TIMEOUT", "10"))
 
+# Indic-To-Pure-Tamil equivalents (evolving-tier, local vendored CSVs; pins in data/PINS.md).
+# The four attributable community sub-lists — combined_all.csv is their dedup merge, but we load
+# the sub-lists so every candidate cites the actual list(s) that attest it.
+EQUIVALENTS_DIR = Path(os.environ.get(
+    "THAMIZH_EQUIVALENTS_DIR", REPO_ROOT / "data" / "equivalents" / "indic-to-pure-tamil"))
+I2PT_SUBLISTS = ("viruba.csv", "tamilchol.csv", "thamizhdna-org.csv", "tamilmandram.csv")
+I2PT_PIN = "narVidhai/Indic-To-Pure-Tamil@f734646 (2026-07-02)"
+
 DEFAULT_DB = Path(os.environ.get("THAMIZH_DB", REPO_ROOT / "data" / "knowledge.sqlite3"))
 
 
