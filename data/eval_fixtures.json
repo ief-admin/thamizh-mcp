@@ -1,0 +1,12 @@
+{
+  "comment": "Contamination guard (blueprint §12, D-005): every word used to MEASURE the system — server-regression fixtures (§9) and thamizh-eval lift fixtures — is listed here so transaction logging flags it eval_fixture=1 and the data-curation contamination guard drops it from every published dataset. NFC-normalized. thamizh-eval extends this list; never publish a word that appears here. Mirrors tests/fixtures/words.json (the §9 regression set) plus any eval-only words.",
+  "words": [
+    "மரம்",
+    "மரத்தில்",
+    "புத்தகம்",
+    "கம்ப்யூட்டர்",
+    "ஜன்னல்",
+    "ஜிலேபி",
+    "உலகம்"
+  ]
+}

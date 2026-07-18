@@ -32,11 +32,12 @@ class Engine:
         self.meaning_sources = list(meaning_sources)
         self.equivalent_sources = list(equivalent_sources)
         self.store = store
+        self._fixtures: Optional[frozenset] = None   # eval-fixture words, loaded lazily
 
     async def analyze(
         self, word: str, normalized: str,
         include: Optional[list[str]] = None, allow_enrichment: bool = True,
-        force_refresh: bool = False,
+        force_refresh: bool = False, tool: str = "analyze_word",
     ) -> WordAnalysis:
         a = empty_analysis(word, normalized)
         a.gaps = []
@@ -62,7 +63,22 @@ class Engine:
             await self._fill_native_equivalent(a, normalized, allow_enrichment, origin)
         if "formation" in wants:
             self._fill_formation(a, normalized)
+        await self._log_transaction(a, word, normalized, tool)
         return a
+
+    async def _log_transaction(self, a: WordAnalysis, word: str, normalized: str, tool: str) -> None:
+        """Accumulate the resolved analysis as gold data (blueprint §12). On by default; a purely
+        background side-output, so any failure is swallowed — logging must never break serving."""
+        if not (config.TXN_LOG and self.store is not None):
+            return
+        if self._fixtures is None:
+            self._fixtures = config.eval_fixture_words()
+        try:
+            await self.store.log_transaction(
+                tool=tool, word=word, normalized=normalized,
+                eval_fixture=normalized in self._fixtures, analysis_json=a.to_json())
+        except Exception:
+            pass
 
     async def _fill_morphology(self, a: WordAnalysis, normalized: str, wants: set) -> None:
         if self.morph is None:
@@ -251,7 +267,8 @@ class Engine:
         pre-warm / grow the cache. Only fields with an evolving source + write-back land in the
         store (today: meaning); rule-based and anchor fields (origin, morphology) are not cached.
         """
-        a = await self.analyze(word, normalized, include=include, allow_enrichment=True)
+        a = await self.analyze(word, normalized, include=include, allow_enrichment=True,
+                               tool="enrich_word")
         cached = await self.store.get_claims(normalized) if self.store is not None else []
         return a, cached
 
@@ -282,7 +299,7 @@ class Engine:
                 continue
             seen.add(normalized)
             a = await self.analyze(raw, normalized, include=include,
-                                   allow_enrichment=True, force_refresh=True)
+                                   allow_enrichment=True, force_refresh=True, tool="refresh_sources")
             claims = await self.store.get_claims(normalized) if self.store is not None else []
             reports.append({
                 "word": raw, "normalized": normalized,
@@ -329,21 +346,23 @@ async def suggest_native_equivalent(
     section is computed (the full analysis is skipped). Returns the WordAnalysis so the head
     can serialize native_equivalent plus its honest gap when nothing is attested."""
     return await default_engine().analyze(word, normalized, include=["native_equivalent"],
-                                          allow_enrichment=allow_enrichment)
+                                          allow_enrichment=allow_enrichment,
+                                          tool="suggest_native_equivalent")
 
 
 async def classify_origin(word: str, normalized: str) -> WordAnalysis:
     """Focused entry point for the classify_origin MCP tool: computes only the origin section
     (இயற்சொல்/வடசொல்/loanword, or honest unknown). Returns the WordAnalysis so the head can
     serialize origin plus its honest gap when no signal grounds a class."""
-    return await default_engine().analyze(word, normalized, include=["origin"])
+    return await default_engine().analyze(word, normalized, include=["origin"],
+                                          tool="classify_origin")
 
 
 async def get_root(word: str, normalized: str) -> WordAnalysis:
     """Focused entry point for the get_root MCP tool: runs only the morphology anchor and
     returns lemma + POS + every valid analysis. Ambiguous morphology leaves lemma empty and
     records the candidates in all_analyses — never silently disambiguated."""
-    return await default_engine().analyze(word, normalized, include=["root"])
+    return await default_engine().analyze(word, normalized, include=["root"], tool="get_root")
 
 
 async def get_meaning(word: str, normalized: str, allow_enrichment: bool = True) -> WordAnalysis:
@@ -351,7 +370,7 @@ async def get_meaning(word: str, normalized: str, allow_enrichment: bool = True)
     (store → evolving pull → write-back). Returns the WordAnalysis so the head can serialize the
     senses with provenance, or an honest gap when no source can ground a meaning."""
     return await default_engine().analyze(word, normalized, include=["meaning"],
-                                          allow_enrichment=allow_enrichment)
+                                          allow_enrichment=allow_enrichment, tool="get_meaning")
 
 
 async def enrich_word(
@@ -373,10 +392,12 @@ async def refresh_sources(
 async def explain_formation(word: str, normalized: str) -> WordAnalysis:
     """Focused entry point for the explain_formation MCP tool: decodes only the பகுபத உறுப்பு
     Formation (Nannūl six-part labels + Tholkappiyam sandhi) from the FST analysis."""
-    return await default_engine().analyze(word, normalized, include=["formation"])
+    return await default_engine().analyze(word, normalized, include=["formation"],
+                                          tool="explain_formation")
 
 
 async def explain_grammar(word: str, normalized: str) -> WordAnalysis:
     """Focused entry point for the explain_grammar MCP tool: word class + வேற்றுமை + verb
     tense/முற்று, Tholkappiyam-first with authority recorded."""
-    return await default_engine().analyze(word, normalized, include=["grammar"])
+    return await default_engine().analyze(word, normalized, include=["grammar"],
+                                          tool="explain_grammar")

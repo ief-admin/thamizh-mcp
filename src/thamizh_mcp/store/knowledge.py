@@ -85,6 +85,35 @@ class KnowledgeStore:
         cutoff = (_dt.date.today() - _dt.timedelta(days=max_age_days)).isoformat()
         return await anyio.to_thread.run_sync(self._stale, cutoff, tier)
 
+    # -- transaction log (gold-corpus accumulation, blueprint §12) --
+    def _log_txn(self, ts: str, tool: str, word: str, normalized: str,
+                 eval_fixture: bool, analysis_json: str) -> None:
+        conn = self._connect()
+        with conn:
+            conn.execute(
+                "INSERT INTO transactions (ts, tool, word, normalized, eval_fixture, analysis_json)"
+                " VALUES (?,?,?,?,?,?)",
+                (ts, tool, word, normalized, 1 if eval_fixture else 0, analysis_json))
+
+    async def log_transaction(self, *, tool: str, word: str, normalized: str,
+                              eval_fixture: bool, analysis_json: str) -> None:
+        import datetime as _dt
+        ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        async with self._write_lock:
+            await anyio.to_thread.run_sync(
+                self._log_txn, ts, tool, word, normalized, eval_fixture, analysis_json)
+
+    def _txn_stats(self) -> dict:
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT normalized), COALESCE(SUM(eval_fixture),0) FROM transactions"
+        ).fetchone()
+        return {"transactions": row[0], "distinct_words": row[1], "eval_fixture_rows": row[2]}
+
+    async def transaction_stats(self) -> dict:
+        """Quick growth metrics for the data-curation skill: total rows, distinct words, fixture rows."""
+        return await anyio.to_thread.run_sync(self._txn_stats)
+
     async def put_claims(self, normalized_word: str, claims: list[Claim]) -> None:
         async with self._write_lock:  # serialize writes — SQLite is single-writer
             await anyio.to_thread.run_sync(self._put, normalized_word, claims)
