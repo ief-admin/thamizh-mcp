@@ -67,9 +67,23 @@ class KnowledgeStore:
                   c.authority, c.confidence, c.retrieved) for c in claims],
             )
 
+    def _stale(self, cutoff_iso: str, tier: str) -> list[str]:
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT DISTINCT word FROM claims WHERE tier=? AND retrieved < ? ORDER BY word",
+            (tier, cutoff_iso))
+        return [r[0] for r in rows]
+
     # -- async API --
     async def get_claims(self, normalized_word: str, field_name: Optional[str] = None) -> list[Claim]:
         return await anyio.to_thread.run_sync(self._get, normalized_word, field_name)
+
+    async def stale_words(self, max_age_days: int, tier: str = "evolving") -> list[str]:
+        """Words holding a `tier` claim retrieved more than max_age_days ago (ISO-date compare).
+        Anchor claims store a version pin, not a date, so only the evolving tier is meaningful here."""
+        import datetime as _dt
+        cutoff = (_dt.date.today() - _dt.timedelta(days=max_age_days)).isoformat()
+        return await anyio.to_thread.run_sync(self._stale, cutoff, tier)
 
     async def put_claims(self, normalized_word: str, claims: list[Claim]) -> None:
         async with self._write_lock:  # serialize writes — SQLite is single-writer

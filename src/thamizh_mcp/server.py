@@ -444,6 +444,61 @@ async def explain_grammar(params: ExplainGrammarInput) -> str:
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
+class RefreshSourcesInput(BaseModel):
+    """Input for refresh_sources."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    words: Optional[list[str]] = Field(
+        default=None, description="Explicit Tamil words (Tamil script) to force-refresh.")
+    stale_days: Optional[int] = Field(
+        default=None, ge=1,
+        description="Also refresh words whose evolving claim was retrieved more than this many days ago.")
+    include: Optional[list[str]] = Field(
+        default=None,
+        description=f"Sections to refresh (default: meaning). Subset of {list(_SECTIONS)}.")
+    limit: int = Field(default=50, ge=1, le=500,
+                       description="Max words actually refreshed this call (bounds network cost).")
+
+
+@mcp.tool(
+    name="refresh_sources",
+    annotations={
+        "title": "Batch-refresh evolving sources (grow coverage)",
+        "readOnlyHint": False,      # writes freshly-pulled evolving claims to the knowledge store
+        "destructiveHint": False,
+        "idempotentHint": False,    # re-pulls each call; a source may return newer data
+        "openWorldHint": True,
+    },
+)
+async def refresh_sources(params: RefreshSourcesInput) -> str:
+    """Force a fresh evolving-source pull (Tamil Wiktionary etc.) for a BATCH of words, overwriting
+    the cache — for growing/refreshing coverage. Give explicit `words`, and/or `stale_days` to sweep
+    words whose cached claim is older than N days. Bounded by `limit`. Each result reports what the
+    store now holds; a word that still can't be grounded is reported with its gaps, never invented.
+
+    Args:
+        params: words (optional), stale_days (optional), include (optional, default meaning), limit.
+
+    Returns:
+        str: JSON { refreshed_count, results: [{word, normalized, refreshed[{field, source, tier,
+        retrieved}], gaps[]} | {word, error}] }.
+
+    Error handling:
+        With neither `words` nor `stale_days`, returns an "Error: ..." asking for a scope.
+    """
+    if not params.words and params.stale_days is None:
+        return "Error: provide `words` and/or `stale_days` to select what to refresh."
+    if params.include is not None:
+        bad = sorted(set(params.include) - set(_SECTIONS))
+        if bad:
+            return f"Error: unknown include section(s) {bad}. Valid: {list(_SECTIONS)}."
+    results = await engine.refresh_sources(
+        params.words, include=params.include, stale_days=params.stale_days, limit=params.limit)
+    refreshed = sum(1 for r in results if not r.get("error"))
+    return json.dumps({"refreshed_count": refreshed, "results": results},
+                      ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     """stdio transport (local v1); streamable HTTP arrives with the Cloud Run deploy (Phase 3+)."""
     mcp.run()

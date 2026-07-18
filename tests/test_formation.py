@@ -94,10 +94,11 @@ def test_engine_no_fst_is_formation_gap():
 
 # --- tools ---
 
-def test_eight_tools_registered():
+def test_all_tools_registered():
     names = {t.name for t in asyncio.run(server.mcp.list_tools())}
     assert {"analyze_word", "suggest_native_equivalent", "classify_origin", "get_root",
-            "get_meaning", "enrich_word", "explain_formation", "explain_grammar"} <= names
+            "get_meaning", "enrich_word", "explain_formation", "explain_grammar",
+            "refresh_sources"} <= names
 
 
 def test_explain_formation_tool(monkeypatch):

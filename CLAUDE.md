@@ -45,15 +45,19 @@ non-readOnly tool) MCP heads over the existing engine paths.
 பகுபத உறுப்பு (Nannūl six parts) + Tholkappiyam சந்தி. Verbs read பகுதி/இடைநிலை/விகுதி straight from
 the FST `=forms`; nouns get சாரியை/உருபு surface-grounded; joins classified only where a confident
 classical rule applies (no invented split). Grammar now also carries verb tense + முற்று. Exposed as
-`explain_formation` and `explain_grammar`. **Eight MCP tools now — full v1 core tool surface.**
-**73 tests pass** (71 without live foma). Design docs mounted read-only at
-`~/projects/thamizh-mcp-design/` (blueprint, tamil-grammar.md, DECISIONS log, program roadmap).
+`explain_formation` and `explain_grammar`.
+**refresh_sources live (2026-07-18):** batch coverage-growth tool — force-refreshes evolving claims
+(explicit `words` and/or `stale_days` sweep of the store), bounded by `limit`, overwriting the cache;
+per-word report with honest errors. Adds a `force_refresh` path to the engine + `KnowledgeStore.stale_words`.
+**Nine MCP tools now** (only optional `validate_pure_tamil`/`generate_forms`/`transliterate` left from §6).
+**79 tests pass** (77 without live foma). Design repo at `~/projects/thamizh-mcp-design/` →
+`ief-global/thamizh-mcp-design` (blueprint, tamil-grammar.md, DECISIONS, roadmap, CODE-STATUS.md).
 
 ## Test ladder (run in order, from repo root)
 ```bash
 uv sync                                              # installs deps incl. pytest
 which flookup && echo "மரம்" | flookup data/fst/noun.fst
-uv run pytest -v                                     # expect 73 passed with foma
+uv run pytest -v                                     # expect 79 passed with foma
 uv run python scripts/analyze.py மரத்தில் --include formation  # பகுதி மரம் + சாரியை அத்து + விகுதி இல்
 uv run python scripts/analyze.py ரயில் --include origin       # loanword: முதல் எழுத்து rule
 uv run python scripts/analyze.py ஜோதி --include origin        # வடசொல்: Grantha letter
@@ -79,7 +83,7 @@ Register as an MCP server: `claude mcp add thamizh -- uv --directory ~/projects/
    the many honest `unknown`s (e.g. புத்தகம், கம்ப்யூட்டர்).
 3. ~~**Remaining MCP tools:** classify_origin, get_root, get_meaning,
    suggest_native_equivalent, enrich_word, explain_formation, explain_grammar.~~
-   **ALL DONE (8 tools).** Only `refresh_sources` (batch re-pull) + optional
+   **DONE + `refresh_sources` (2026-07-18) → 9 tools.** Only optional
    `validate_pure_tamil`/`generate_forms`/`transliterate` remain from blueprint §6.
 4. ~~**Formation decoder** (FST tags → பகுபத உறுப்பு) — Phase 3.~~ **DONE (2026-07-18):**
    `decode_formation` + verb tense/முற்று grammar. **Deferred (honest boundary):** precise

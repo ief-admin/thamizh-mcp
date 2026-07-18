@@ -17,7 +17,7 @@ from thamizh_mcp import config, server
 from thamizh_mcp.adapters.base import AdapterResult, SourceAdapter
 from thamizh_mcp.core.engine import Engine
 from thamizh_mcp.schema import MorphAnalysis, SourceRef
-from thamizh_mcp.store.knowledge import KnowledgeStore
+from thamizh_mcp.store.knowledge import Claim, KnowledgeStore
 
 
 class FakeMorph(SourceAdapter):
@@ -115,6 +115,58 @@ def test_enrich_word_rejects_bad_include(monkeypatch, tmp_path):
 
 def test_enrich_word_rejects_non_tamil():
     assert asyncio.run(server.enrich_word(server.EnrichWordInput(word="tree"))).startswith("Error:")
+
+
+# --- refresh_sources ---
+
+def _refresh_engine(tmp_path):
+    return Engine(meaning_sources=[FakeMeaning()], store=KnowledgeStore(tmp_path / "k.sqlite3"))
+
+
+def test_refresh_words_batch(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default", _refresh_engine(tmp_path))
+    FakeMeaning.calls = 0
+    out = json.loads(asyncio.run(server.refresh_sources(server.RefreshSourcesInput(words=["மரம்", "புத்தகம்"]))))
+    assert out["refreshed_count"] == 2 and FakeMeaning.calls == 2
+    assert all(any(f["field"] == "meaning" for f in r["refreshed"]) for r in out["results"])
+
+
+def test_refresh_forces_repull_unlike_enrich(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default", _refresh_engine(tmp_path))
+    FakeMeaning.calls = 0
+    asyncio.run(server.refresh_sources(server.RefreshSourcesInput(words=["மரம்"])))
+    asyncio.run(server.refresh_sources(server.RefreshSourcesInput(words=["மரம்"])))
+    assert FakeMeaning.calls == 2   # forced re-pull each time (enrich would have stayed at 1)
+
+
+def test_refresh_stale_days_selects_old_claims(monkeypatch, tmp_path):
+    store = KnowledgeStore(tmp_path / "k.sqlite3")
+    asyncio.run(store.put_claims("மரம்", [Claim(
+        field="meaning", value={"senses": []}, source="old", tier="evolving", retrieved="2020-01-01")]))
+    assert asyncio.run(store.stale_words(1)) == ["மரம்"]
+    monkeypatch.setattr(eng, "_default", Engine(meaning_sources=[FakeMeaning()], store=store))
+    FakeMeaning.calls = 0
+    out = json.loads(asyncio.run(server.refresh_sources(server.RefreshSourcesInput(stale_days=1))))
+    assert out["refreshed_count"] == 1 and FakeMeaning.calls == 1
+
+
+def test_refresh_limit_bounds_work(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default", _refresh_engine(tmp_path))
+    FakeMeaning.calls = 0
+    out = json.loads(asyncio.run(
+        server.refresh_sources(server.RefreshSourcesInput(words=["மரம்", "புத்தகம்", "வீடு"], limit=2))))
+    assert out["refreshed_count"] == 2 and FakeMeaning.calls == 2
+
+
+def test_refresh_requires_a_scope():
+    assert asyncio.run(server.refresh_sources(server.RefreshSourcesInput())).startswith("Error:")
+
+
+def test_refresh_reports_invalid_word_without_failing(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default", _refresh_engine(tmp_path))
+    out = json.loads(asyncio.run(server.refresh_sources(server.RefreshSourcesInput(words=["tree", "மரம்"]))))
+    errs = [r for r in out["results"] if r.get("error")]
+    assert len(errs) == 1 and errs[0]["word"] == "tree" and out["refreshed_count"] == 1
 
 
 needs_fst = pytest.mark.skipif(not config.flookup_available(),

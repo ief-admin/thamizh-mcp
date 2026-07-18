@@ -36,6 +36,7 @@ class Engine:
     async def analyze(
         self, word: str, normalized: str,
         include: Optional[list[str]] = None, allow_enrichment: bool = True,
+        force_refresh: bool = False,
     ) -> WordAnalysis:
         a = empty_analysis(word, normalized)
         a.gaps = []
@@ -56,7 +57,7 @@ class Engine:
                     a.gaps.append(Gap(field="origin", note=origin.evidence))
 
         if "meaning" in wants:
-            await self._fill_meaning(a, normalized, allow_enrichment)
+            await self._fill_meaning(a, normalized, allow_enrichment, force_refresh)
         if "native_equivalent" in wants:
             await self._fill_native_equivalent(a, normalized, allow_enrichment, origin)
         if "formation" in wants:
@@ -132,9 +133,10 @@ class Engine:
                               note="structural ambiguity — formation shown for the primary analysis; "
                                    "see all_analyses"))
 
-    async def _fill_meaning(self, a: WordAnalysis, normalized: str, allow_enrichment: bool) -> None:
-        # 1) cache
-        if self.store is not None:
+    async def _fill_meaning(self, a: WordAnalysis, normalized: str, allow_enrichment: bool,
+                            force_refresh: bool = False) -> None:
+        # 1) cache — skipped on a forced refresh so evolving sources are re-pulled and overwritten
+        if self.store is not None and not force_refresh:
             cached = await self.store.get_claims(normalized, "meaning")
             if cached:
                 senses, srcs = [], []
@@ -253,6 +255,44 @@ class Engine:
         cached = await self.store.get_claims(normalized) if self.store is not None else []
         return a, cached
 
+    async def refresh(
+        self, words: Optional[Sequence[str]] = None, *, include: Optional[list[str]] = None,
+        stale_days: Optional[int] = None, limit: int = 50,
+    ) -> list[dict]:
+        """Batch coverage-growth: force a fresh evolving pull (overwriting the cache) for the given
+        words and/or store words whose evolving claim is older than `stale_days`. Sequential and
+        capped at `limit` real refreshes to bound network cost. Returns a per-word report."""
+        from thamizh_mcp.normalize import normalize
+        include = include or ["meaning"]  # meaning is the only write-back field today
+        targets = list(words or [])
+        if stale_days is not None and self.store is not None:
+            targets += await self.store.stale_words(stale_days)
+        reports: list[dict] = []
+        seen: set[str] = set()
+        done = 0
+        for raw in targets:
+            if done >= limit:
+                break
+            try:
+                normalized = normalize(raw)
+            except ValueError as exc:
+                reports.append({"word": raw, "error": str(exc)})
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            a = await self.analyze(raw, normalized, include=include,
+                                   allow_enrichment=True, force_refresh=True)
+            claims = await self.store.get_claims(normalized) if self.store is not None else []
+            reports.append({
+                "word": raw, "normalized": normalized,
+                "refreshed": [{"field": c.field, "source": c.source, "tier": c.tier,
+                               "retrieved": c.retrieved} for c in claims],
+                "gaps": [g.field for g in a.gaps],
+            })
+            done += 1
+        return reports
+
 
 _default: Optional[Engine] = None
 
@@ -320,6 +360,14 @@ async def enrich_word(
     """Entry point for the enrich_word MCP tool: forces the enrichment loop and returns the
     analysis plus the store's claims for the word so the head can report what is now cached."""
     return await default_engine().enrich(word, normalized, include=include)
+
+
+async def refresh_sources(
+    words: Optional[Sequence[str]] = None, *, include: Optional[list[str]] = None,
+    stale_days: Optional[int] = None, limit: int = 50,
+) -> list[dict]:
+    """Entry point for the refresh_sources MCP tool: batch force-refresh of evolving claims."""
+    return await default_engine().refresh(words, include=include, stale_days=stale_days, limit=limit)
 
 
 async def explain_formation(word: str, normalized: str) -> WordAnalysis:
