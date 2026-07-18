@@ -12,14 +12,12 @@ from typing import Optional, Sequence
 
 from thamizh_mcp import config
 from thamizh_mcp.adapters.base import AdapterResult, SourceAdapter
-from thamizh_mcp.core import decoder
+from thamizh_mcp.core import classifier, decoder
 from thamizh_mcp.schema import (
     STUB_NOTE, EquivalentCandidate, Gap, Grammar, Meaning, NativeEquivalent, Origin, Sense,
     SourceRef, WordAnalysis, empty_analysis,
 )
 from thamizh_mcp.store.knowledge import Claim, KnowledgeStore
-
-_PENDING = "grounding source not wired yet (Phase 1/2 in progress)"
 
 
 class Engine:
@@ -43,15 +41,24 @@ class Engine:
         a.gaps = []
         wants = set(include) if include else {"origin", "root", "meaning", "formation", "grammar", "native_equivalent"}
 
-        if {"root", "grammar", "formation"} & wants:
+        morph_ran = bool({"root", "grammar", "formation"} & wants)
+        if morph_ran:
             await self._fill_morphology(a, normalized, wants)
+
+        # Origin is computed before native_equivalent so it can gate it (native word → no equivalent).
+        origin = None
+        if {"origin", "native_equivalent"} & wants:
+            origin = await self._classify_origin(a, normalized, morph_ran)
+            if "origin" in wants:
+                a.origin = origin
+                a.sources.extend(origin.sources)
+                if origin.class_ == "unknown":
+                    a.gaps.append(Gap(field="origin", note=origin.evidence))
+
         if "meaning" in wants:
             await self._fill_meaning(a, normalized, allow_enrichment)
         if "native_equivalent" in wants:
-            await self._fill_native_equivalent(a, normalized, allow_enrichment)
-        # Not yet wired (Phase 2): explicit gaps, never guesses.
-        if "origin" in wants:
-            a.gaps.append(Gap(field="origin", note=_PENDING))
+            await self._fill_native_equivalent(a, normalized, allow_enrichment, origin)
         if "formation" in wants and not a.formation.components:
             a.gaps.append(Gap(field="formation", note="பகுபத உறுப்பு decoder lands in Phase 3"))
         return a
@@ -142,28 +149,62 @@ class Engine:
             note += "; no evolving source configured"
         a.gaps.append(Gap(field="meaning", note=note))
 
-    async def _fill_native_equivalent(
-        self, a: WordAnalysis, normalized: str, allow_enrichment: bool
-    ) -> None:
-        """Surface ATTESTED pure-Tamil equivalents for a borrowed word.
+    async def _classify_origin(
+        self, a: WordAnalysis, normalized: str, morph_ran: bool
+    ) -> Origin:
+        """Gather offline signals and classify origin (core/classifier.py holds the rules).
 
-        Until the origin classifier lands (Phase 2), a hit in an Indic→Tamil equivalent list is
-        itself the evidence that the word is borrowed → applicable=True. A miss cannot prove the
-        word is native (it may simply be absent from our lists), so applicable stays False with a
-        note that origin classification is pending. The classifier will later gate this precisely.
-        Network equivalent sources (evolving-tier, future ta.wiktionary synonym mining) must honor
-        allow_enrichment; the local I2PT CSVs do not touch the network, so they always run.
+        FST native-parse signal: reuse the morphology run if it already happened; else query the
+        FST directly. None means the FST is unavailable (no foma) — the native signal is absent,
+        not False. I2PT membership is the borrowed-attestation signal.
         """
+        if a.all_analyses:
+            fst_native: Optional[bool] = True
+        elif morph_ran:
+            fst_native = False if self.morph is not None else None
+        elif self.morph is not None:
+            res = await self.morph.lookup(normalized)
+            fst_native = isinstance(res, AdapterResult) and bool(res.fields.get("all_analyses"))
+        else:
+            fst_native = None
+        in_i2pt = await self._word_in_i2pt(normalized)
+        return classifier.classify_origin(normalized, fst_native_parse=fst_native, in_i2pt=in_i2pt)
+
+    async def _word_in_i2pt(self, normalized: str) -> bool:
+        """Is the word an attested borrowed headword in any configured equivalent source?"""
+        for src in self.equivalent_sources:
+            res = await src.lookup(normalized)
+            if isinstance(res, AdapterResult) and res.fields.get("candidates"):
+                return True
+        return False
+
+    async def _fill_native_equivalent(
+        self, a: WordAnalysis, normalized: str, allow_enrichment: bool,
+        origin: Optional[Origin] = None,
+    ) -> None:
+        """Surface ATTESTED pure-Tamil equivalents — gated on origin.
+
+        A word classified native (இயற்சொல்) needs no equivalent: applicable=False, and NOT a gap
+        (that is a resolved answer, not an unknown). Otherwise (borrowed, or origin undetermined)
+        we look for attested equivalents; a miss is an honest gap. Network equivalent sources
+        (future ta.wiktionary synonym mining) must honor allow_enrichment; the local I2PT CSVs do
+        not touch the network, so they always run.
+        """
+        if origin is not None and origin.is_native:
+            a.native_equivalent = NativeEquivalent(
+                applicable=False,
+                note=f"word classified native ({origin.class_}) — no borrowed equivalent applies")
+            return
         misses: list[str] = []
         for src in self.equivalent_sources:
             res = await src.lookup(normalized)
             if isinstance(res, AdapterResult):
                 candidates = [EquivalentCandidate(**c) for c in res.fields["candidates"]]
                 if candidates:
+                    cls = origin.class_ if origin is not None else "unknown"
                     a.native_equivalent = NativeEquivalent(
                         applicable=True, candidates=candidates, sources=res.sources,
-                        note="attested in an Indic→Tamil equivalent source; origin classification "
-                             "(Phase 2) will confirm the borrowed status")
+                        note=f"attested pure-Tamil equivalents for a borrowed word (origin: {cls})")
                     a.sources.extend(res.sources)
                     return
             else:
@@ -173,7 +214,8 @@ class Engine:
             note += " (" + " | ".join(misses) + ")"
         elif not self.equivalent_sources:
             note += "; no equivalent source configured"
-        note += "; origin classification pending (Phase 2)"
+        if origin is not None and origin.class_ == "unknown":
+            note += "; origin undetermined"
         a.native_equivalent = NativeEquivalent(applicable=False, note=note)
         a.gaps.append(Gap(field="native_equivalent", note=note))
 
@@ -214,3 +256,10 @@ async def suggest_native_equivalent(
     can serialize native_equivalent plus its honest gap when nothing is attested."""
     return await default_engine().analyze(word, normalized, include=["native_equivalent"],
                                           allow_enrichment=allow_enrichment)
+
+
+async def classify_origin(word: str, normalized: str) -> WordAnalysis:
+    """Focused entry point for the classify_origin MCP tool: computes only the origin section
+    (இயற்சொல்/வடசொல்/loanword, or honest unknown). Returns the WordAnalysis so the head can
+    serialize origin plus its honest gap when no signal grounds a class."""
+    return await default_engine().analyze(word, normalized, include=["origin"])

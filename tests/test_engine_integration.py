@@ -45,7 +45,10 @@ def test_morphology_fills_grounded_fields_and_keeps_ambiguity():
     assert a.grammar.word_class == "பெயர்" and a.grammar.authority == "Tholkappiyam"
     assert a.grammar.case is None and "ambiguous" in a.grammar.notes  # loc vs soc — not adjudicated
     assert any(s.name == "ThamizhiMorph" and s.tier == "anchor" for s in a.sources)
-    assert {g.field for g in a.gaps} == {"origin", "native_equivalent", "formation", "meaning"}
+    # native FST parse + no non-native markers → இயற்சொல்; equivalent then correctly not applicable
+    assert a.origin.class_ == "இயற்சொல்" and a.origin.is_native is True
+    assert a.native_equivalent.applicable is False
+    assert {g.field for g in a.gaps} == {"formation", "meaning"}  # origin resolved, not a gap
 
 
 def test_enrichment_loop_pull_writeback_then_cache(tmp_path):

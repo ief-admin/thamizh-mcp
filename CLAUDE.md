@@ -32,13 +32,19 @@ template-style parser).
 **Native equivalents live (2026-07-17):** `IndicToPureTamilAdapter` over the vendored I2PT
 sub-lists (per-candidate attestation, attested-only), wired into the engine
 (`_fill_native_equivalent`) and exposed as the `suggest_native_equivalent` MCP tool.
-**35 tests pass** (33 without live foma).
+**Origin classifier live (2026-07-17):** `core/classifier.py` — rule-based, Tholkappiyam-grounded
+(Grantha letters via open-tamil; முதல்/இறுதி எழுத்து phonotactics) fused with the FST native-parse
+and I2PT attestation. Classes இயற்சொல்/வடசொல்/loanword; honest `unknown` for திரிசொல்/திசைச்சொல் and
+language-undetermined borrowings (never guessed). Exposed as `classify_origin`; origin now gates
+`native_equivalent` (native word → not applicable). **47 tests pass** (45 without live foma).
 
 ## Test ladder (run in order, from repo root)
 ```bash
 uv sync                                              # installs deps incl. pytest
 which flookup && echo "மரம்" | flookup data/fst/noun.fst
-uv run pytest -v                                     # expect 35 passed with foma
+uv run pytest -v                                     # expect 47 passed with foma
+uv run python scripts/analyze.py ரயில் --include origin       # loanword: முதல் எழுத்து rule
+uv run python scripts/analyze.py ஜோதி --include origin        # வடசொல்: Grantha letter
 uv run python scripts/analyze.py மரத்தில்            # lemma மரம், loc|soc kept, Tholkappiyam cites
 uv run python scripts/analyze.py புத்தகம் --include meaning   # first live Wiktionary pull
 uv run python scripts/analyze.py புத்தகம் --include meaning   # again → must serve from cache
@@ -53,8 +59,12 @@ Register as an MCP server: `claude mcp add thamizh -- uv --directory ~/projects/
    ta.wiktionary `{{சொல்வளம்N|...}}` synonym templates as a second *network* evolving
    source (must honor `allow_enrichment`); (b) TVA govt கலைச்சொல் **anchor** glossary
    (`kalaichol.py` still a stub — network snapshot, see task 5).
-2. **Origin classifier** — Thamizhi Validator + I2PT + loanword data → four
-   Tholkappiyam classes (இயற்சொல் / வடசொல் / …).
+2. ~~**Origin classifier** → four Tholkappiyam classes.~~ **DONE (2026-07-17):**
+   `core/classifier.py` (open-tamil Grantha + Tholkappiyam முதல்/இறுதி எழுத்து rules +
+   FST parse + I2PT), `classify_origin` tool, gates `native_equivalent`. **Remaining/deferred:**
+   திரிசொல்/திசைச்சொல் need a lexical/dialectal corpus (return `unknown` for now, never guessed);
+   Thamizhi Validator + a real loanword dataset can slot in later as stronger signals to lift
+   the many honest `unknown`s (e.g. புத்தகம், கம்ப்யூட்டர்).
 3. **Remaining MCP tools:** classify_origin, get_root, get_meaning,
    explain_formation, explain_grammar, suggest_native_equivalent, enrich_word
    (`analyze_word` already live).

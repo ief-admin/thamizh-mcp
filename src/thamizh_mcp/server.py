@@ -132,6 +132,58 @@ async def suggest_native_equivalent(params: SuggestNativeEquivalentInput) -> str
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
+class ClassifyOriginInput(BaseModel):
+    """Input for classify_origin."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. மரம் or யோகம் or ரயில்.")
+
+
+@mcp.tool(
+    name="classify_origin",
+    annotations={
+        "title": "Classify a Tamil word's origin (சொல் வகை)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def classify_origin(params: ClassifyOriginInput) -> str:
+    """Classify one Tamil word's origin — இயற்சொல் (native), வடசொல் (Sanskrit), or loanword —
+    grounded in Tamil orthography (Grantha letters, Tholkappiyam முதல்/இறுதி எழுத்து rules), the
+    native ThamizhiMorph FST parse, and I2PT borrowed-word attestation.
+
+    HONEST BOUNDARY: திரிசொல் (literary) and திசைச்சொல் (regional) need lexical/dialectal corpus
+    knowledge unavailable offline and are never guessed — when the signals can't ground a class,
+    origin.class is "unknown" with an evidence note and a matching gap. Each claim carries its
+    source; competing readings are kept in origin.alternatives.
+
+    Args:
+        params: word (required, Tamil script).
+
+    Returns:
+        str: JSON { word, normalized, origin{class, is_native, evidence, confidence,
+        alternatives[], sources[]}, gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.classify_origin(params.word, normalized)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "origin": analysis.origin.model_dump(by_alias=True),
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     """stdio transport (local v1); streamable HTTP arrives with the Cloud Run deploy (Phase 3+)."""
     mcp.run()
