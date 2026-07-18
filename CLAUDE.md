@@ -37,15 +37,17 @@ sub-lists (per-candidate attestation, attested-only), wired into the engine
 and I2PT attestation. Classes இயற்சொல்/வடசொல்/loanword; honest `unknown` for திரிசொல்/திசைச்சொல் and
 language-undetermined borrowings (never guessed). Exposed as `classify_origin`; origin now gates
 `native_equivalent` (native word → not applicable).
-**Root + meaning tools live (2026-07-17):** thin `get_root` (FST lemma/POS, keeps all analyses)
-and `get_meaning` (self-enriching store → Wiktionary pull, provenance-tagged) MCP heads over the
-existing engine paths. **Five MCP tools now.** **55 tests pass** (53 without live foma).
+**Root + meaning + enrich tools live (2026-07-17):** thin `get_root` (FST lemma/POS, keeps all
+analyses), `get_meaning` (self-enriching store → Wiktionary pull, provenance-tagged), and
+`enrich_word` (forces the pull→write-back loop, reports what the store now caches; the one
+non-readOnly tool) MCP heads over the existing engine paths. **Six MCP tools now.**
+**59 tests pass** (57 without live foma).
 
 ## Test ladder (run in order, from repo root)
 ```bash
 uv sync                                              # installs deps incl. pytest
 which flookup && echo "மரம்" | flookup data/fst/noun.fst
-uv run pytest -v                                     # expect 55 passed with foma
+uv run pytest -v                                     # expect 59 passed with foma
 uv run python scripts/analyze.py ரயில் --include origin       # loanword: முதல் எழுத்து rule
 uv run python scripts/analyze.py ஜோதி --include origin        # வடசொல்: Grantha letter
 uv run python scripts/analyze.py மரத்தில்            # lemma மரம், loc|soc kept, Tholkappiyam cites
@@ -69,8 +71,8 @@ Register as an MCP server: `claude mcp add thamizh -- uv --directory ~/projects/
    Thamizhi Validator + a real loanword dataset can slot in later as stronger signals to lift
    the many honest `unknown`s (e.g. புத்தகம், கம்ப்யூட்டர்).
 3. **Remaining MCP tools:** ~~classify_origin~~, ~~get_root~~, ~~get_meaning~~,
-   ~~suggest_native_equivalent~~ done. **Left:** explain_formation, explain_grammar
-   (both wait on the Phase-3 formation decoder), enrich_word (`analyze_word` already live).
+   ~~suggest_native_equivalent~~, ~~enrich_word~~ done. **Left:** explain_formation,
+   explain_grammar — both wait on the Phase-3 formation decoder (task 4).
 4. **Formation decoder** (FST tags → பகுபத உறுப்பு) — Phase 3.
 5. **Phase 4 eval**, then Madras Lexicon + TVA கலைச்சொல் snapshots (pin in `data/`).
 

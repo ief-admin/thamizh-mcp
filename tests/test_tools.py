@@ -17,6 +17,7 @@ from thamizh_mcp import config, server
 from thamizh_mcp.adapters.base import AdapterResult, SourceAdapter
 from thamizh_mcp.core.engine import Engine
 from thamizh_mcp.schema import MorphAnalysis, SourceRef
+from thamizh_mcp.store.knowledge import KnowledgeStore
 
 
 class FakeMorph(SourceAdapter):
@@ -29,16 +30,18 @@ class FakeMorph(SourceAdapter):
 
 class FakeMeaning(SourceAdapter):
     name, tier = "Tamil Wiktionary", "evolving"
+    calls = 0
     async def lookup(self, w):
+        FakeMeaning.calls += 1
         return AdapterResult(
             fields={"senses": [{"gloss_ta": "ஒரு வகை தாவரம்", "citation": "https://ta.wiktionary.org/x"}]},
             sources=[SourceRef(name=self.name, tier="evolving", retrieved="2026-07-02")], tier="evolving")
 
 
-def test_all_five_tools_registered():
+def test_all_six_tools_registered():
     names = {t.name for t in asyncio.run(server.mcp.list_tools())}
     assert {"analyze_word", "suggest_native_equivalent", "classify_origin",
-            "get_root", "get_meaning"} <= names
+            "get_root", "get_meaning", "enrich_word"} <= names
 
 
 # --- get_root ---
@@ -80,6 +83,38 @@ def test_get_meaning_disabled_enrichment_is_honest_gap(monkeypatch):
 
 def test_get_meaning_rejects_non_tamil():
     assert asyncio.run(server.get_meaning(server.GetMeaningInput(word="tree"))).startswith("Error:")
+
+
+# --- enrich_word ---
+
+def test_enrich_word_caches_and_is_idempotent(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default",
+                        Engine(meaning_sources=[FakeMeaning()], store=KnowledgeStore(tmp_path / "k.sqlite3")))
+    FakeMeaning.calls = 0
+    out1 = json.loads(asyncio.run(server.enrich_word(server.EnrichWordInput(word="மரம்"))))
+    cached = {c["field"]: c for c in out1["cached_claims"]}
+    assert "meaning" in cached and cached["meaning"]["source"] == "Tamil Wiktionary"
+    assert cached["meaning"]["tier"] == "evolving"
+    assert FakeMeaning.calls == 1
+    out2 = json.loads(asyncio.run(server.enrich_word(server.EnrichWordInput(word="மரம்"))))
+    assert [c["field"] for c in out2["cached_claims"]] == ["meaning"]   # still cached
+    assert FakeMeaning.calls == 1                                        # served from store, no re-pull
+
+
+def test_enrich_word_no_store_reports_nothing_cached(monkeypatch):
+    monkeypatch.setattr(eng, "_default", Engine(meaning_sources=[FakeMeaning()]))  # no store
+    out = json.loads(asyncio.run(server.enrich_word(server.EnrichWordInput(word="மரம்"))))
+    assert out["cached_claims"] == []
+
+
+def test_enrich_word_rejects_bad_include(monkeypatch, tmp_path):
+    monkeypatch.setattr(eng, "_default", Engine(store=KnowledgeStore(tmp_path / "k.sqlite3")))
+    err = asyncio.run(server.enrich_word(server.EnrichWordInput(word="மரம்", include=["bogus"])))
+    assert err.startswith("Error:") and "bogus" in err
+
+
+def test_enrich_word_rejects_non_tamil():
+    assert asyncio.run(server.enrich_word(server.EnrichWordInput(word="tree"))).startswith("Error:")
 
 
 needs_fst = pytest.mark.skipif(not config.flookup_available(),

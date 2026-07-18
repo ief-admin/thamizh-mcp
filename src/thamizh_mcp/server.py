@@ -285,6 +285,64 @@ async def get_meaning(params: GetMeaningInput) -> str:
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
+class EnrichWordInput(BaseModel):
+    """Input for enrich_word."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script to enrich, e.g. புத்தகம்.")
+    include: Optional[list[str]] = Field(
+        default=None,
+        description=f"Sections to enrich (default: all). Subset of {list(_SECTIONS)}.")
+
+
+@mcp.tool(
+    name="enrich_word",
+    annotations={
+        "title": "Enrich the store for a Tamil word (self-enriching cache)",
+        "readOnlyHint": False,      # writes evolving claims to the knowledge store
+        "destructiveHint": False,
+        "idempotentHint": True,     # re-running re-serves the same cached claim, no duplicate pull
+        "openWorldHint": True,
+    },
+)
+async def enrich_word(params: EnrichWordInput) -> str:
+    """Force the self-enriching loop for a word: pull from evolving sources (Tamil Wiktionary) on
+    anchor miss and write the results back to the knowledge store with provenance, then report
+    what the store now holds. Use it to pre-warm or grow the cache. Only fields with an evolving
+    source land in the store (today: meaning); rule-based/anchor fields are not cached.
+
+    Args:
+        params: word (required, Tamil script), include (optional section filter).
+
+    Returns:
+        str: JSON { word, normalized, cached_claims[{field, source, tier, retrieved}], gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    include = params.include
+    if include is not None:
+        bad = sorted(set(include) - set(_SECTIONS))
+        if bad:
+            return f"Error: unknown include section(s) {bad}. Valid: {list(_SECTIONS)}."
+    analysis, cached = await engine.enrich_word(params.word, normalized, include=include)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "cached_claims": [
+            {"field": c.field, "source": c.source, "tier": c.tier, "retrieved": c.retrieved}
+            for c in cached
+        ],
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     """stdio transport (local v1); streamable HTTP arrives with the Cloud Run deploy (Phase 3+)."""
     mcp.run()

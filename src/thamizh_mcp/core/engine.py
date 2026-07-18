@@ -219,6 +219,18 @@ class Engine:
         a.native_equivalent = NativeEquivalent(applicable=False, note=note)
         a.gaps.append(Gap(field="native_equivalent", note=note))
 
+    async def enrich(
+        self, word: str, normalized: str, include: Optional[list[str]] = None,
+    ) -> tuple[WordAnalysis, list[Claim]]:
+        """Force the self-enriching loop for a word (pull evolving sources, write back), then
+        report what the knowledge store now holds. Unlike analyze, this is a WRITE: it exists to
+        pre-warm / grow the cache. Only fields with an evolving source + write-back land in the
+        store (today: meaning); rule-based and anchor fields (origin, morphology) are not cached.
+        """
+        a = await self.analyze(word, normalized, include=include, allow_enrichment=True)
+        cached = await self.store.get_claims(normalized) if self.store is not None else []
+        return a, cached
+
 
 _default: Optional[Engine] = None
 
@@ -278,3 +290,11 @@ async def get_meaning(word: str, normalized: str, allow_enrichment: bool = True)
     senses with provenance, or an honest gap when no source can ground a meaning."""
     return await default_engine().analyze(word, normalized, include=["meaning"],
                                           allow_enrichment=allow_enrichment)
+
+
+async def enrich_word(
+    word: str, normalized: str, include: Optional[list[str]] = None,
+) -> tuple[WordAnalysis, list[Claim]]:
+    """Entry point for the enrich_word MCP tool: forces the enrichment loop and returns the
+    analysis plus the store's claims for the word so the head can report what is now cached."""
+    return await default_engine().enrich(word, normalized, include=include)
