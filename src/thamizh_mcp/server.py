@@ -343,6 +343,107 @@ async def enrich_word(params: EnrichWordInput) -> str:
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
+class ExplainFormationInput(BaseModel):
+    """Input for explain_formation."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. மரத்தில் or வந்தான்.")
+
+
+@mcp.tool(
+    name="explain_formation",
+    annotations={
+        "title": "Explain a Tamil word's formation (பகுபத உறுப்பு)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def explain_formation(params: ExplainFormationInput) -> str:
+    """Decompose an inflected Tamil word into its பகுபத உறுப்பு (Nannūl's six parts —
+    பகுதி/விகுதி/இடைநிலை/சாரியை/சந்தி/விகாரம்) with the புணர்ச்சி (sandhi) at each join, decoded from
+    the ThamizhiMorph FST — e.g. மரத்தில் → பகுதி மரம் + சாரியை அத்து + விகுதி இல் (திரிதல்: ம்→த்).
+
+    Grounds only what the FST provides: a simple/borrowed word is பகாப்பதம்; a join the FST does not
+    determine is left unnamed, never invented. Component labels carry Nannūl authority; sandhi carries
+    Tholkappiyam (எழுத்ததிகாரம், புணரியல்). No FST analysis → honest gap.
+
+    Args:
+        params: word (required, Tamil script).
+
+    Returns:
+        str: JSON { word, normalized, formation{word_type, components[{part, form, role, authority}],
+        sandhi[{type, detail, authority}], sources[]}, gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.explain_formation(params.word, normalized)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "formation": analysis.formation.model_dump(by_alias=True),
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+class ExplainGrammarInput(BaseModel):
+    """Input for explain_grammar."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. மரத்தில் or வந்தான்.")
+
+
+@mcp.tool(
+    name="explain_grammar",
+    annotations={
+        "title": "Explain a Tamil word's grammar (சொல் இலக்கணம்)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def explain_grammar(params: ExplainGrammarInput) -> str:
+    """Grammatical analysis of one Tamil word — சொல் வகை (word class பெயர்/வினை/இடை/உரி), வேற்றுமை
+    (case, for nouns), and tense + முற்று (person-number-gender, for verbs) — decoded from the
+    ThamizhiMorph FST, Tholkappiyam-first with the authority recorded.
+
+    Ambiguity is preserved: the இல் suffix reads as both 5th (ablative) and 7th (locative) case, so
+    both are reported rather than guessed. Word class the FST cannot map → honest gap.
+
+    Args:
+        params: word (required, Tamil script).
+
+    Returns:
+        str: JSON { word, normalized, grammar{word_class, case{number, name, function}, tense,
+        person_number_gender, authority, notes, sources[]}, gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.explain_grammar(params.word, normalized)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "grammar": analysis.grammar.model_dump(by_alias=True),
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     """stdio transport (local v1); streamable HTTP arrives with the Cloud Run deploy (Phase 3+)."""
     mcp.run()

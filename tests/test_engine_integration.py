@@ -48,7 +48,9 @@ def test_morphology_fills_grounded_fields_and_keeps_ambiguity():
     # native FST parse + no non-native markers → இயற்சொல்; equivalent then correctly not applicable
     assert a.origin.class_ == "இயற்சொல்" and a.origin.is_native is True
     assert a.native_equivalent.applicable is False
-    assert {g.field for g in a.gaps} == {"formation", "meaning"}  # origin resolved, not a gap
+    # formation now decodes from the FST analysis (பகுதி மரம் + சாரியை + விகுதி) → not a gap
+    assert a.formation.word_type == "பகுபதம்" and any(c.part == "பகுதி" for c in a.formation.components)
+    assert {g.field for g in a.gaps} == {"meaning"}  # origin + formation resolved; only meaning gaps
 
 
 def test_enrichment_loop_pull_writeback_then_cache(tmp_path):

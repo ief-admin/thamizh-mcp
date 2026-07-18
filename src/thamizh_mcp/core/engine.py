@@ -59,8 +59,8 @@ class Engine:
             await self._fill_meaning(a, normalized, allow_enrichment)
         if "native_equivalent" in wants:
             await self._fill_native_equivalent(a, normalized, allow_enrichment, origin)
-        if "formation" in wants and not a.formation.components:
-            a.gaps.append(Gap(field="formation", note="பகுபத உறுப்பு decoder lands in Phase 3"))
+        if "formation" in wants:
+            self._fill_formation(a, normalized)
         return a
 
     async def _fill_morphology(self, a: WordAnalysis, normalized: str, wants: set) -> None:
@@ -106,9 +106,31 @@ class Engine:
                                  + "; ".join(sorted(c[1] for c in cases))
                                  + " — disambiguation is downstream (blueprint §2)")
                 grammar.sources.append(decoder.THOLKAPPIYAM_VETRUMAI)
+            # Verb முற்று: tense (காலம்) + person-number-gender, decoded from the FST's =forms.
+            if a.pos == "வினைச்சொல்":
+                verb_an = next((m for m in analyses if decoder.map_pos(m.pos) == "வினைச்சொல்"), None)
+                if verb_an is not None:
+                    grammar.tense, grammar.person_number_gender = decoder.decode_verb_grammar(verb_an)
+                    if grammar.tense or grammar.person_number_gender:
+                        grammar.sources.append(decoder.THOLKAPPIYAM_VINAIYIYAL)
             a.grammar = grammar
             if grammar.word_class == "unknown":
                 a.gaps.append(Gap(field="grammar", note="word class unmapped — see all_analyses"))
+
+    def _fill_formation(self, a: WordAnalysis, normalized: str) -> None:
+        """Decode பகுபத உறுப்பு Formation from the FST analysis. No analysis → honest gap
+        (never an invented split). When analyses share one lemma the decode is unambiguous; a
+        structural split (different lemma/pos) is decoded from the primary with a note."""
+        if not a.all_analyses:
+            a.gaps.append(Gap(field="formation",
+                              note="no FST analysis — formation cannot be decoded (no invented split)"))
+            return
+        a.formation = decoder.decode_formation(normalized, a.all_analyses[0])
+        a.sources.extend(a.formation.sources)
+        if len({m.lemma for m in a.all_analyses}) > 1:
+            a.gaps.append(Gap(field="formation",
+                              note="structural ambiguity — formation shown for the primary analysis; "
+                                   "see all_analyses"))
 
     async def _fill_meaning(self, a: WordAnalysis, normalized: str, allow_enrichment: bool) -> None:
         # 1) cache
@@ -298,3 +320,15 @@ async def enrich_word(
     """Entry point for the enrich_word MCP tool: forces the enrichment loop and returns the
     analysis plus the store's claims for the word so the head can report what is now cached."""
     return await default_engine().enrich(word, normalized, include=include)
+
+
+async def explain_formation(word: str, normalized: str) -> WordAnalysis:
+    """Focused entry point for the explain_formation MCP tool: decodes only the பகுபத உறுப்பு
+    Formation (Nannūl six-part labels + Tholkappiyam sandhi) from the FST analysis."""
+    return await default_engine().analyze(word, normalized, include=["formation"])
+
+
+async def explain_grammar(word: str, normalized: str) -> WordAnalysis:
+    """Focused entry point for the explain_grammar MCP tool: word class + வேற்றுமை + verb
+    tense/முற்று, Tholkappiyam-first with authority recorded."""
+    return await default_engine().analyze(word, normalized, include=["grammar"])

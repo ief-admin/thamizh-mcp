@@ -75,11 +75,13 @@ class FormationComponent(BaseModel):
     part: ComponentPart
     form: str
     role: Optional[str] = None
+    authority: Optional[Authority] = None   # six-part labels: Nannūl; underlying elements: Tholkappiyam
 
 
 class SandhiEvent(BaseModel):
     type: SandhiType
     detail: Optional[str] = None
+    authority: Optional[Authority] = None   # புணர்ச்சி/விகாரம்: Tholkappiyam (எழுத்ததிகாரம், புணரியல்)
 
 
 class Formation(BaseModel):

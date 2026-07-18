@@ -40,14 +40,21 @@ language-undetermined borrowings (never guessed). Exposed as `classify_origin`; 
 **Root + meaning + enrich tools live (2026-07-17):** thin `get_root` (FST lemma/POS, keeps all
 analyses), `get_meaning` (self-enriching store → Wiktionary pull, provenance-tagged), and
 `enrich_word` (forces the pull→write-back loop, reports what the store now caches; the one
-non-readOnly tool) MCP heads over the existing engine paths. **Six MCP tools now.**
-**59 tests pass** (57 without live foma).
+non-readOnly tool) MCP heads over the existing engine paths.
+**Formation decoder live (2026-07-18):** `core/decoder.py` `decode_formation` — FST tags →
+பகுபத உறுப்பு (Nannūl six parts) + Tholkappiyam சந்தி. Verbs read பகுதி/இடைநிலை/விகுதி straight from
+the FST `=forms`; nouns get சாரியை/உருபு surface-grounded; joins classified only where a confident
+classical rule applies (no invented split). Grammar now also carries verb tense + முற்று. Exposed as
+`explain_formation` and `explain_grammar`. **Eight MCP tools now — full v1 core tool surface.**
+**73 tests pass** (71 without live foma). Design docs mounted read-only at
+`~/projects/thamizh-mcp-design/` (blueprint, tamil-grammar.md, DECISIONS log, program roadmap).
 
 ## Test ladder (run in order, from repo root)
 ```bash
 uv sync                                              # installs deps incl. pytest
 which flookup && echo "மரம்" | flookup data/fst/noun.fst
-uv run pytest -v                                     # expect 59 passed with foma
+uv run pytest -v                                     # expect 73 passed with foma
+uv run python scripts/analyze.py மரத்தில் --include formation  # பகுதி மரம் + சாரியை அத்து + விகுதி இல்
 uv run python scripts/analyze.py ரயில் --include origin       # loanword: முதல் எழுத்து rule
 uv run python scripts/analyze.py ஜோதி --include origin        # வடசொல்: Grantha letter
 uv run python scripts/analyze.py மரத்தில்            # lemma மரம், loc|soc kept, Tholkappiyam cites
@@ -70,11 +77,18 @@ Register as an MCP server: `claude mcp add thamizh -- uv --directory ~/projects/
    திரிசொல்/திசைச்சொல் need a lexical/dialectal corpus (return `unknown` for now, never guessed);
    Thamizhi Validator + a real loanword dataset can slot in later as stronger signals to lift
    the many honest `unknown`s (e.g. புத்தகம், கம்ப்யூட்டர்).
-3. **Remaining MCP tools:** ~~classify_origin~~, ~~get_root~~, ~~get_meaning~~,
-   ~~suggest_native_equivalent~~, ~~enrich_word~~ done. **Left:** explain_formation,
-   explain_grammar — both wait on the Phase-3 formation decoder (task 4).
-4. **Formation decoder** (FST tags → பகுபத உறுப்பு) — Phase 3.
-5. **Phase 4 eval**, then Madras Lexicon + TVA கலைச்சொல் snapshots (pin in `data/`).
+3. ~~**Remaining MCP tools:** classify_origin, get_root, get_meaning,
+   suggest_native_equivalent, enrich_word, explain_formation, explain_grammar.~~
+   **ALL DONE (8 tools).** Only `refresh_sources` (batch re-pull) + optional
+   `validate_pure_tamil`/`generate_forms`/`transliterate` remain from blueprint §6.
+4. ~~**Formation decoder** (FST tags → பகுபத உறுப்பு) — Phase 3.~~ **DONE (2026-07-18):**
+   `decode_formation` + verb tense/முற்று grammar. **Deferred (honest boundary):** precise
+   விகாரம்/சந்தி naming beyond the confident rules (e.g. verb root வா→வந்) — the FST doesn't hand
+   the join over, so it's left unnamed for now, never invented.
+5. **Phase 4 eval** (morphological lift, `thamizh-eval` skill — D-005), then Madras Lexicon +
+   TVA கலைச்சொல் snapshots (pin in `data/`, network-open session). Also near-term:
+   transaction logging (gold-corpus flywheel, `thamizh-data-curation` — blueprint §12) and
+   `refresh_sources`. Program roadmap: `~/projects/thamizh-mcp-design/TAMIL-HIGH-RESOURCE-ROADMAP.md`.
 
 ## Design rules (do not violate)
 - **Tholkappiyam-first:** cite Tholkappiyam before Nannool for grammar claims.
