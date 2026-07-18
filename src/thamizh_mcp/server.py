@@ -5,6 +5,7 @@ All linguistic logic lives in core/; other heads (FastAPI REST, CLI) reuse the s
 """
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -75,6 +76,60 @@ async def analyze_word(params: AnalyzeWordInput) -> str:
         params.word, normalized, include=include, allow_enrichment=params.allow_enrichment
     )
     return analysis.to_json()
+
+
+class SuggestNativeEquivalentInput(BaseModel):
+    """Input for suggest_native_equivalent."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. அகராதி or கம்ப்யூட்டர்.")
+    allow_enrichment: bool = Field(
+        default=True,
+        description="Permit evolving-tier pulls on anchor miss; cached with provenance.")
+
+
+@mcp.tool(
+    name="suggest_native_equivalent",
+    annotations={
+        "title": "Suggest attested pure-Tamil equivalents (தனித்தமிழ்)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def suggest_native_equivalent(params: SuggestNativeEquivalentInput) -> str:
+    """ATTESTED pure-Tamil (தனித்தமிழ்) equivalents for a borrowed/Indic word — e.g. அகராதி →
+    அகரமுதலி/அகரவரிசை. Grounded in named community glossaries (Indic-To-Pure-Tamil); every
+    candidate carries its attestation source. An invented coinage never surfaces.
+
+    A word with no attested equivalent (or a native word not in the lists) returns
+    applicable=false with an honest gap — origin classification (Phase 2) will tighten this.
+
+    Args:
+        params: word (required, Tamil script), allow_enrichment (default true).
+
+    Returns:
+        str: JSON { word, normalized, native_equivalent{applicable, candidates[], note, sources[]},
+        gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.suggest_native_equivalent(
+        params.word, normalized, allow_enrichment=params.allow_enrichment)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "native_equivalent": analysis.native_equivalent.model_dump(by_alias=True),
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
 
 
 def main() -> None:

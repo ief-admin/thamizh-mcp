@@ -24,17 +24,21 @@ integration. Loop: work on `develop` here → push → open PR `develop → main
 milestones. After any history rewrite, other clones must `git reset --hard origin/main`
 (not merge/rebase).
 
-## Current state (2026-07-04)
+## Current state (2026-07-17)
 **Phase 1 core DONE.** FastMCP server with `analyze_word` end-to-end: ThamizhiMorph
 FST anchor (foma), SQLite per-claim knowledge store + self-enriching
 pull→write-back→cache loop, Wiktionary adapter (descriptive UA + real ta.wiktionary
-template-style parser). **27 tests pass** (25 without live foma).
+template-style parser).
+**Native equivalents live (2026-07-17):** `IndicToPureTamilAdapter` over the vendored I2PT
+sub-lists (per-candidate attestation, attested-only), wired into the engine
+(`_fill_native_equivalent`) and exposed as the `suggest_native_equivalent` MCP tool.
+**35 tests pass** (33 without live foma).
 
 ## Test ladder (run in order, from repo root)
 ```bash
 uv sync                                              # installs deps incl. pytest
 which flookup && echo "மரம்" | flookup data/fst/noun.fst
-uv run pytest -v                                     # expect 27 passed with foma
+uv run pytest -v                                     # expect 35 passed with foma
 uv run python scripts/analyze.py மரத்தில்            # lemma மரம், loc|soc kept, Tholkappiyam cites
 uv run python scripts/analyze.py புத்தகம் --include meaning   # first live Wiktionary pull
 uv run python scripts/analyze.py புத்தகம் --include meaning   # again → must serve from cache
@@ -43,10 +47,12 @@ sqlite3 data/knowledge.sqlite3 'select word,field,source,tier,retrieved from cla
 Register as an MCP server: `claude mcp add thamizh -- uv --directory ~/projects/thamizh-mcp run thamizh-mcp`
 
 ## Next tasks (build order)
-1. **Kalaichol / equivalents adapter** over the pinned I2PT CSVs
-   (`data/equivalents/`, 2,063 rows) → powers `suggest_native_equivalent`.
-   Local data, buildable now. Also mine ta.wiktionary `{{சொல்வளம்N|...}}`
-   synonym templates as an evolving equivalent source.
+1. ~~**Kalaichol / equivalents adapter** over the pinned I2PT CSVs →
+   `suggest_native_equivalent`.~~ **DONE (2026-07-17):** local I2PT adapter +
+   engine wiring + MCP tool + tests. **Remaining under this objective:** (a) mine
+   ta.wiktionary `{{சொல்வளம்N|...}}` synonym templates as a second *network* evolving
+   source (must honor `allow_enrichment`); (b) TVA govt கலைச்சொல் **anchor** glossary
+   (`kalaichol.py` still a stub — network snapshot, see task 5).
 2. **Origin classifier** — Thamizhi Validator + I2PT + loanword data → four
    Tholkappiyam classes (இயற்சொல் / வடசொல் / …).
 3. **Remaining MCP tools:** classify_origin, get_root, get_meaning,
