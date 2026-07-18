@@ -263,3 +263,18 @@ async def classify_origin(word: str, normalized: str) -> WordAnalysis:
     (இயற்சொல்/வடசொல்/loanword, or honest unknown). Returns the WordAnalysis so the head can
     serialize origin plus its honest gap when no signal grounds a class."""
     return await default_engine().analyze(word, normalized, include=["origin"])
+
+
+async def get_root(word: str, normalized: str) -> WordAnalysis:
+    """Focused entry point for the get_root MCP tool: runs only the morphology anchor and
+    returns lemma + POS + every valid analysis. Ambiguous morphology leaves lemma empty and
+    records the candidates in all_analyses — never silently disambiguated."""
+    return await default_engine().analyze(word, normalized, include=["root"])
+
+
+async def get_meaning(word: str, normalized: str, allow_enrichment: bool = True) -> WordAnalysis:
+    """Focused entry point for the get_meaning MCP tool: runs only the meaning enrichment loop
+    (store → evolving pull → write-back). Returns the WordAnalysis so the head can serialize the
+    senses with provenance, or an honest gap when no source can ground a meaning."""
+    return await default_engine().analyze(word, normalized, include=["meaning"],
+                                          allow_enrichment=allow_enrichment)

@@ -184,6 +184,107 @@ async def classify_origin(params: ClassifyOriginInput) -> str:
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
+class GetRootInput(BaseModel):
+    """Input for get_root."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. மரத்தில் or வந்தான்.")
+
+
+@mcp.tool(
+    name="get_root",
+    annotations={
+        "title": "Find a Tamil word's root/lemma (அடிச்சொல்)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def get_root(params: GetRootInput) -> str:
+    """The root/lemma (அடிச்சொல்) and part of speech of an inflected Tamil word, from the
+    ThamizhiMorph FST anchor — e.g. மரத்தில் → மரம். When morphology is ambiguous the lemma is
+    left empty and ALL valid analyses are returned in all_analyses (never silently disambiguated);
+    with no FST available the lemma is an honest gap, not a guess.
+
+    Args:
+        params: word (required, Tamil script).
+
+    Returns:
+        str: JSON { word, normalized, lemma, pos, all_analyses[{lemma, pos, tags}], gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.get_root(params.word, normalized)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "lemma": analysis.lemma,
+        "pos": analysis.pos,
+        "all_analyses": [m.model_dump() for m in analysis.all_analyses],
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+class GetMeaningInput(BaseModel):
+    """Input for get_meaning."""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    word: str = Field(..., min_length=1, max_length=100,
+                      description="One Tamil word in Tamil script, e.g. புத்தகம் or மரம்.")
+    allow_enrichment: bool = Field(
+        default=True,
+        description="Permit evolving-tier internet pulls (Tamil Wiktionary etc.) on anchor miss; "
+                    "results are cached with provenance.")
+
+
+@mcp.tool(
+    name="get_meaning",
+    annotations={
+        "title": "Get a Tamil word's meaning (பொருள்)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def get_meaning(params: GetMeaningInput) -> str:
+    """The meaning (பொருள்) of a Tamil word — senses with provenance, served from the self-
+    enriching store or pulled from an evolving source (Tamil Wiktionary) and cached. Each sense
+    carries its source and retrieval date. A word no source can ground returns an honest gap with
+    the reason, never an invented gloss.
+
+    Args:
+        params: word (required, Tamil script), allow_enrichment (default true).
+
+    Returns:
+        str: JSON { word, normalized, meaning{senses[], sources[]}, gaps[] }.
+
+    Error handling:
+        Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
+    """
+    try:
+        normalized = normalize(params.word)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    analysis = await engine.get_meaning(
+        params.word, normalized, allow_enrichment=params.allow_enrichment)
+    out = {
+        "word": analysis.word,
+        "normalized": analysis.normalized,
+        "meaning": analysis.meaning.model_dump(by_alias=True),
+        "gaps": [g.model_dump() for g in analysis.gaps],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     """stdio transport (local v1); streamable HTTP arrives with the Cloud Run deploy (Phase 3+)."""
     mcp.run()
