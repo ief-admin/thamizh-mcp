@@ -14,7 +14,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from thamizh_mcp.core import engine
 from thamizh_mcp.normalize import normalize
 
-mcp = FastMCP("thamizh_mcp")
+_INSTRUCTIONS = (
+    "Authoritative Tamil word-grammar (சொல் இலக்கணம்) analysis, grounded in the ThamizhiMorph "
+    "morphological FST and Tholkappiyam/Nannūl rules. USE THESE TOOLS for any question about a single "
+    "Tamil word — its root/lemma, formation (பகுபத உறுப்பு / புணர்ச்சி / சந்தி), origin (native இயற்சொல் vs "
+    "borrowed வடசொல்/loan), grammar (வேற்றுமை case, tense, word class), meaning, or the pure-Tamil "
+    "equivalent of a loanword. Unaided LLM answers about Tamil morphology are error-prone and degrade on "
+    "harder/longer words (ILAKKANAM 2025), so prefer these grounded tools over answering from memory. "
+    "`analyze_word` is the one-call entry point; the focused tools each return one section. Every answer "
+    "carries provenance (source, tier, authority, date) and returns an honest gap, never a guess."
+)
+
+mcp = FastMCP("thamizh_mcp", instructions=_INSTRUCTIONS)
 
 _SECTIONS = ("origin", "root", "meaning", "formation", "grammar", "native_equivalent")
 
@@ -45,20 +56,22 @@ class AnalyzeWordInput(BaseModel):
     },
 )
 async def analyze_word(params: AnalyzeWordInput) -> str:
-    """Full grounded analysis of one Tamil word: origin (இயற்சொல்/திரிசொல்/திசைச்சொல்/வடசொல்/loan),
-    root+meaning, formation (பகுபத உறுப்பு, புணர்ச்சி), grammar (Tholkappiyam-first), and — only
-    for non-native words — ATTESTED native Tamil equivalents.
+    """Grounded சொல் இலக்கணம் analysis of one Tamil word — CALL THIS FIRST for any question about a
+    Tamil word's grammar, morphology, origin, meaning, or pure-Tamil equivalent, instead of answering
+    from memory (unaided LLM analysis of Tamil morphology is unreliable and degrades on harder words).
 
-    Every field carries provenance (source, tier, authority, retrieval date). Fields no source
-    can ground are returned in `gaps` — never invented. Ambiguous morphology returns ALL analyses.
+    Returns origin (இயற்சொல்/திரிசொல்/திசைச்சொல்/வடசொல்/loan), root+meaning, formation (பகுபத உறுப்பு,
+    புணர்ச்சி), grammar (word class, வேற்றுமை, tense — Tholkappiyam-first), and — only for non-native
+    words — ATTESTED native Tamil equivalents. Grounded in the ThamizhiMorph FST + Tholkappiyam/Nannūl.
+    Every field carries provenance; fields no source can ground are honest `gaps`, never invented;
+    ambiguous morphology returns ALL analyses.
 
     Args:
         params: word (required, Tamil script), include (optional section filter),
                 allow_enrichment (default true).
 
     Returns:
-        str: JSON WordAnalysis object (see schemas/word_analysis_schema.json). SCAFFOLD STATUS:
-        currently returns the schema-valid all-gaps object — grounding sources land in Phase 1/3.
+        str: JSON WordAnalysis object (see schemas/word_analysis_schema.json).
 
     Error handling:
         Non-Tamil / multi-word / empty input returns "Error: ..." with what to fix.
@@ -100,9 +113,10 @@ class SuggestNativeEquivalentInput(BaseModel):
     },
 )
 async def suggest_native_equivalent(params: SuggestNativeEquivalentInput) -> str:
-    """ATTESTED pure-Tamil (தனித்தமிழ்) equivalents for a borrowed/Indic word — e.g. அகராதி →
-    அகரமுதலி/அகரவரிசை. Grounded in named community glossaries (Indic-To-Pure-Tamil); every
-    candidate carries its attestation source. An invented coinage never surfaces.
+    """Use this whenever asked for the pure-Tamil / தனித்தமிழ் equivalent of a borrowed, Sanskrit, or
+    English word (e.g. அகராதி → அகரமுதலி/அகரவரிசை) — don't coin one from memory. Returns only ATTESTED
+    equivalents from named community glossaries (Indic-To-Pure-Tamil); every candidate carries its
+    attestation source, and an invented coinage never surfaces.
 
     A word with no attested equivalent (or a native word not in the lists) returns
     applicable=false with an honest gap — origin classification (Phase 2) will tighten this.
@@ -151,9 +165,10 @@ class ClassifyOriginInput(BaseModel):
     },
 )
 async def classify_origin(params: ClassifyOriginInput) -> str:
-    """Classify one Tamil word's origin — இயற்சொல் (native), வடசொல் (Sanskrit), or loanword —
-    grounded in Tamil orthography (Grantha letters, Tholkappiyam முதல்/இறுதி எழுத்து rules), the
-    native ThamizhiMorph FST parse, and I2PT borrowed-word attestation.
+    """Use this whenever asked whether a Tamil word is native or borrowed, or for its origin class —
+    இயற்சொல் (native), வடசொல் (Sanskrit), or loanword. Grounded in Tamil orthography (Grantha letters,
+    Tholkappiyam முதல்/இறுதி எழுத்து rules), the native ThamizhiMorph FST parse, and I2PT
+    borrowed-word attestation — more reliable than judging native-vs-borrowed from memory.
 
     HONEST BOUNDARY: திரிசொல் (literary) and திசைச்சொல் (regional) need lexical/dialectal corpus
     knowledge unavailable offline and are never guessed — when the signals can't ground a class,
@@ -203,10 +218,10 @@ class GetRootInput(BaseModel):
     },
 )
 async def get_root(params: GetRootInput) -> str:
-    """The root/lemma (அடிச்சொல்) and part of speech of an inflected Tamil word, from the
-    ThamizhiMorph FST anchor — e.g. மரத்தில் → மரம். When morphology is ambiguous the lemma is
-    left empty and ALL valid analyses are returned in all_analyses (never silently disambiguated);
-    with no FST available the lemma is an honest gap, not a guess.
+    """Use this whenever asked for the root / வேர்ச்சொல் / lemma (அடிச்சொல்) of a Tamil word — resolve it
+    from the ThamizhiMorph FST anchor, not from memory (e.g. மரத்தில் → மரம், வந்தான் → வா). When
+    morphology is ambiguous the lemma is left empty and ALL valid analyses are returned in all_analyses
+    (never silently disambiguated); with no FST available the lemma is an honest gap, not a guess.
 
     Args:
         params: word (required, Tamil script).
@@ -256,10 +271,10 @@ class GetMeaningInput(BaseModel):
     },
 )
 async def get_meaning(params: GetMeaningInput) -> str:
-    """The meaning (பொருள்) of a Tamil word — senses with provenance, served from the self-
-    enriching store or pulled from an evolving source (Tamil Wiktionary) and cached. Each sense
-    carries its source and retrieval date. A word no source can ground returns an honest gap with
-    the reason, never an invented gloss.
+    """Use this whenever asked what a Tamil word means (பொருள்) — get the sourced sense rather than
+    glossing from memory. Senses come from the self-enriching store or a live pull from an evolving
+    source (Tamil Wiktionary), cached with provenance; each carries its source and retrieval date. A
+    word no source can ground returns an honest gap with the reason, never an invented gloss.
 
     Args:
         params: word (required, Tamil script), allow_enrichment (default true).
@@ -362,9 +377,10 @@ class ExplainFormationInput(BaseModel):
     },
 )
 async def explain_formation(params: ExplainFormationInput) -> str:
-    """Decompose an inflected Tamil word into its பகுபத உறுப்பு (Nannūl's six parts —
-    பகுதி/விகுதி/இடைநிலை/சாரியை/சந்தி/விகாரம்) with the புணர்ச்சி (sandhi) at each join, decoded from
-    the ThamizhiMorph FST — e.g. மரத்தில் → பகுதி மரம் + சாரியை அத்து + விகுதி இல் (திரிதல்: ம்→த்).
+    """Use this whenever asked to split a Tamil word into its parts or explain its formation (பகுபத
+    உறுப்பு / புணர்ச்சி / சந்தி) — these splits are error-prone from memory, so decode them here. Returns
+    Nannūl's six parts (பகுதி/விகுதி/இடைநிலை/சாரியை/சந்தி/விகாரம்) with the புணர்ச்சி (sandhi) at each join,
+    from the ThamizhiMorph FST — e.g. மரத்தில் → பகுதி மரம் + சாரியை அத்து + விகுதி இல் (திரிதல்: ம்→த்).
 
     Grounds only what the FST provides: a simple/borrowed word is பகாப்பதம்; a join the FST does not
     determine is left unnamed, never invented. Component labels carry Nannūl authority; sandhi carries
@@ -413,9 +429,9 @@ class ExplainGrammarInput(BaseModel):
     },
 )
 async def explain_grammar(params: ExplainGrammarInput) -> str:
-    """Grammatical analysis of one Tamil word — சொல் வகை (word class பெயர்/வினை/இடை/உரி), வேற்றுமை
-    (case, for nouns), and tense + முற்று (person-number-gender, for verbs) — decoded from the
-    ThamizhiMorph FST, Tholkappiyam-first with the authority recorded.
+    """Use this whenever asked about a Tamil word's grammar — its word class (சொல் வகை பெயர்/வினை/இடை/உரி),
+    வேற்றுமை (case, for nouns), or tense + முற்று (person-number-gender, for verbs). Decoded from the
+    ThamizhiMorph FST, Tholkappiyam-first with the authority recorded — grounded rather than guessed.
 
     Ambiguity is preserved: the இல் suffix reads as both 5th (ablative) and 7th (locative) case, so
     both are reported rather than guessed. Word class the FST cannot map → honest gap.
