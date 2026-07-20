@@ -11,7 +11,15 @@ import pytest
 
 from thamizh_mcp.core.engine import Engine
 from thamizh_mcp.normalize import normalize
-from thamizh_mcp.schema import WordAnalysis
+from thamizh_mcp.schema import SourceRef, WordAnalysis
+
+
+def test_sourceref_verse_is_optional_additive():
+    # D-011: நூற்பா number for classical citations; None is the honest section-level interim.
+    assert SourceRef(name="Tholkappiyam").verse is None
+    r = SourceRef(name="Tholkappiyam", authority="Tholkappiyam",
+                  ref="சொல்லதிகாரம், வேற்றுமையியல்", verse="நூற்பா 152")
+    assert json.loads(r.model_dump_json())["verse"] == "நூற்பா 152"
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "words.json").read_text("utf-8"))
 WORDS = [w["word"] for w in FIXTURES["words"]]

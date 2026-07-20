@@ -37,6 +37,9 @@ class SourceRef(BaseModel):
     authority: Optional[Authority] = None
     ref: Optional[str] = None
     retrieved: Optional[str] = None
+    verse: Optional[str] = None   # D-011: நூற்பா number for classical citations, populated once a
+    #                               digitized Tholkappiyam/Nannūl edition is pinned; None = section-level
+    #                               (the honest interim). Additive, non-breaking.
 
 
 class Origin(BaseModel):

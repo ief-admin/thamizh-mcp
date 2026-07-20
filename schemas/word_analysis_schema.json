@@ -142,7 +142,8 @@
           "tier": { "type": "string", "enum": ["anchor", "evolving"], "description": "anchor = stable/authoritative/version-pinned; evolving = community/internet-fed." },
           "authority": { "type": ["string", "null"], "enum": ["Tholkappiyam", "Nannūl", null], "description": "For grammar claims: which classical authority. Tholkappiyam first; Nannūl fallback." },
           "ref": { "type": "string", "description": "URL, citation, or rule reference." },
-          "retrieved": { "type": "string", "description": "ISO date (evolving pulls) or version pin (anchors)." }
+          "retrieved": { "type": "string", "description": "ISO date (evolving pulls) or version pin (anchors)." },
+          "verse": { "type": ["string", "null"], "description": "D-011: நூற்பா number for classical (Tholkappiyam/Nannūl) citations; null until a digitized edition is pinned (section-level interim)." }
         }
       }
     }
